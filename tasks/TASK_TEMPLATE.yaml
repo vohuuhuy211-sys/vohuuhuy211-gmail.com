@@ -1,0 +1,40 @@
+schema_version: "1.0"
+task:
+  id: "TASK-YYYYMMDD-001"
+  title: "用业务语言描述任务"
+  status: draft # draft | ready | in_progress | blocked | review | done
+  owner: ""
+  source_request: "用户原始自然语言需求"
+
+business_context:
+  goal: "希望实现的业务结果"
+  user_value: "为谁解决什么问题"
+  current_problem: "当前现象"
+  root_cause_assessment: "根因判断；未知时写明待验证"
+  success_metrics: []
+
+scope:
+  in_scope: []
+  out_of_scope: []
+
+requirements:
+  functional: []
+  non_functional: []
+
+acceptance_criteria:
+  - id: AC-01
+    given: "前置条件"
+    when: "用户或系统执行的动作"
+    then: "可观察、可验证的结果"
+    evidence: "测试、文件、日志或界面成果"
+
+delivery:
+  expected_files: []
+  generated_artifacts: []
+  test_commands: []
+
+assumptions: []
+dependencies: []
+risks: []
+open_questions: []
+

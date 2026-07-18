@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-collect:
+    name: Test and collect delivery context
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+
+      - name: Install project dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f package-lock.json ]]; then npm ci
+          elif [[ -f package.json ]]; then npm install
+          fi
+          if [[ -f requirements.txt ]]; then python -m pip install -r requirements.txt
+          elif [[ -f pyproject.toml ]]; then python -m pip install .
+          fi
+
+      - name: Run tests and preserve the real exit status
+        id: tests
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set +e
+          if [[ -f package.json ]]; then
+            npm test 2>&1 | tee artifacts/test-results.txt
+            test_exit=${PIPESTATUS[0]}
+          elif [[ -f pyproject.toml || -f requirements.txt || -d tests ]]; then
+            python -m pytest 2>&1 | tee artifacts/test-results.txt
+            test_exit=${PIPESTATUS[0]}
+          else
+            printf 'No supported project test configuration was found.\n' | tee artifacts/test-results.txt
+            test_exit=0
+          fi
+          echo "exit_code=$test_exit" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Collect delivery context
+        if: always()
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base_arg=()
+          if [[ -n "$BASE_REF" ]] && git rev-parse --verify "origin/$BASE_REF" >/dev/null 2>&1; then
+            base_arg=(--base "origin/$BASE_REF")
+          fi
+          python scripts/collect_delivery_context.py \
+            --test-log artifacts/test-results.txt \
+            "${base_arg[@]}"
+
+      - name: Upload delivery context, logs, and generated files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delivery-context-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            delivery-context/
+            artifacts/
+            dist/
+            build/
+            coverage/
+            reports/
+
+      - name: Fail when tests failed
+        if: always() && steps.tests.outputs.exit_code != '0'
+        shell: bash
+        run: |
+          echo "Tests failed with exit code ${{ steps.tests.outputs.exit_code }}."
+          exit 1
+
