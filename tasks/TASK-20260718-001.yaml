@@ -1,0 +1,82 @@
+schema_version: "1.0"
+task:
+  id: "TASK-20260718-001"
+  title: "建立 AI 协作与自动验收基础设施 V1.0"
+  status: review
+  owner: "Codex"
+  source_request: "搭建协作规则、结构化任务、交付上下文、CI 和 AI Review 工作流框架。"
+
+business_context:
+  goal: "让非技术用户可用自然语言提出需求，并让后续开发与验收具有可追溯的真实证据。"
+  user_value: "用户无需搬运代码、截图和日志，也能通过 Pull Request 查看完整交付证据。"
+  current_problem: "项目尚无统一任务格式、协作规则、自动测试证据收集和审查入口。"
+  root_cause_assessment: "缺少仓库级流程约束和自动化基础设施，而非单个业务功能缺陷。"
+  success_metrics:
+    - "要求的基础文件全部存在且格式有效"
+    - "交付收集脚本生成六个规定文件"
+    - "CI 测试失败时返回失败状态并保留日志"
+
+scope:
+  in_scope:
+    - "仓库协作与产品规则"
+    - "任务和评审数据结构"
+    - "Pull Request 模板"
+    - "CI 与 AI Review 工作流框架"
+    - "交付上下文收集脚本"
+  out_of_scope:
+    - "WAIOS 业务功能"
+    - "代用户创建 GitHub 账号、密钥或付费资源"
+    - "正式分支合并"
+
+requirements:
+  functional:
+    - "自然语言需求可被整理为结构化任务"
+    - "CI 保存测试日志、生成文件和代码差异"
+    - "AI Review 未配置时不得伪装为已接入"
+  non_functional:
+    - "规则使用通俗中文"
+    - "密钥不得进入仓库"
+
+acceptance_criteria:
+  - id: AC-01
+    given: "基础设施文件已创建"
+    when: "检查 YAML、JSON 和 Python 语法"
+    then: "所有格式检查通过"
+    evidence: "本地验证日志与 Pull Request 的 CI 日志"
+  - id: AC-02
+    given: "存在任务文件和测试日志"
+    when: "运行 collect_delivery_context.py"
+    then: "delivery-context 下生成六个规定文件"
+    evidence: "GitHub Actions 构建产物 delivery-context"
+  - id: AC-03
+    given: "测试命令返回非零状态"
+    when: "CI 完成日志收集"
+    then: "工作流最终失败且日志仍可下载"
+    evidence: "ci.yml 的测试、上传和失败状态步骤"
+
+delivery:
+  expected_files:
+    - "AGENTS.md"
+    - "docs/USER_COLLABORATION_RULES.md"
+    - "docs/PRODUCT_RULES.md"
+    - "tasks/TASK_TEMPLATE.yaml"
+    - "reviews/REVIEW_SCHEMA.json"
+    - ".github/pull_request_template.md"
+    - ".github/workflows/ci.yml"
+    - ".github/workflows/ai-review.yml"
+    - "scripts/collect_delivery_context.py"
+  generated_artifacts:
+    - "delivery-context/"
+  test_commands:
+    - "python3 -m py_compile scripts/collect_delivery_context.py"
+    - "python3 -m json.tool reviews/REVIEW_SCHEMA.json"
+    - "ruby YAML.parse_file for YAML workflow and task files"
+
+assumptions:
+  - "当前空仓库尚无 Node 或 Python 业务依赖与业务测试。"
+dependencies:
+  - "创建远程 Pull Request 需要 GitHub 仓库远程地址和用户授权。"
+risks:
+  - "AI Review 在 OPENAI_API_KEY、模型变量、提示词审批及 GitHub 权限配置前不会执行。"
+open_questions: []
+

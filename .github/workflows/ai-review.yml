@@ -1,0 +1,128 @@
+name: AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+# TODO(ai-review): Repository settings must grant GitHub Actions permission to
+# write Pull Request comments. Forked PRs may require a separate trusted design.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  configuration-check:
+    # TODO(ai-review): Make this exact check name required in the formal branch's
+    # branch-protection/ruleset settings after the integration is configured.
+    name: AI Review / configuration check
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.config.outputs.configured }}
+    steps:
+      - name: Verify required configuration without exposing secrets
+        id: config
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REVIEW_MODEL: ${{ vars.AI_REVIEW_MODEL }}
+        run: |
+          configured=true
+          if [[ -z "$OPENAI_API_KEY" ]]; then
+            echo "::warning::TODO: configure the OPENAI_API_KEY repository secret."
+            configured=false
+          fi
+          if [[ -z "$REVIEW_MODEL" ]]; then
+            echo "::warning::TODO: configure the AI_REVIEW_MODEL repository variable."
+            configured=false
+          fi
+          echo "configured=$configured" >> "$GITHUB_OUTPUT"
+          if [[ "$configured" != true ]]; then
+            echo "AI review is a framework only and is not configured yet."
+          fi
+
+  review:
+    name: AI Review / product and technical review
+    needs: configuration-check
+    if: needs.configuration-check.outputs.configured == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build review input
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p ai-review
+          git diff --no-ext-diff "$BASE_SHA...HEAD" > ai-review/diff.patch
+          cp reviews/REVIEW_SCHEMA.json ai-review/review-schema.json
+          python scripts/collect_delivery_context.py --base "$BASE_SHA"
+          cp delivery-context/task.yaml ai-review/task.yaml
+
+      - name: Request structured AI review
+        id: review
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REVIEW_MODEL: ${{ vars.AI_REVIEW_MODEL }}
+        run: |
+          # TODO(ai-review): Replace or version this Review prompt after product
+          # and security owners approve it. Never claim success before evaluation.
+          jq -n \
+            --arg model "$REVIEW_MODEL" \
+            --rawfile diff ai-review/diff.patch \
+            --rawfile schema ai-review/review-schema.json \
+            --rawfile task ai-review/task.yaml \
+            '{
+              model: $model,
+              input: [{role: "user", content: [{type: "input_text", text:
+                ("Review this Pull Request against its task, scope, tests, security, and data integrity. " +
+                 "Return JSON only, conforming to the supplied schema. Do not invent test results.\n\nTASK:\n" +
+                 $task + "\n\nDIFF:\n" + $diff + "\n\nSCHEMA:\n" + $schema)}]}]
+            }' > ai-review/request.json
+          curl --fail-with-body --silent --show-error \
+            https://api.openai.com/v1/responses \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data-binary @ai-review/request.json > ai-review/response.json
+          jq -r '[.output[]?.content[]? | select(.type == "output_text") | .text] | join("\n")' \
+            ai-review/response.json > ai-review/result.json
+          python -m json.tool ai-review/result.json >/dev/null
+
+      - name: Add review result to the Pull Request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          {
+            echo '## AI Review（AI 审查）'
+            echo
+            echo '> This is an automated review; required human approval is unchanged.'
+            echo
+            echo '```json'
+            cat ai-review/result.json
+            echo '```'
+          } > ai-review/comment.md
+          gh pr comment "$PR_URL" --body-file ai-review/comment.md
+
+      - name: Enforce review verdict
+        shell: bash
+        run: |
+          verdict=$(jq -r '.verdict' ai-review/result.json)
+          if [[ "$verdict" != pass ]]; then
+            echo "AI review verdict: $verdict"
+            exit 1
+          fi
+
+      - name: Save AI review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-${{ github.run_id }}
+          retention-days: 30
+          path: ai-review/

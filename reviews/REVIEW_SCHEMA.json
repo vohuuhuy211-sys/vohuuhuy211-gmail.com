@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/ai-review-v1.json",
+  "title": "AI Review Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "verdict", "summary", "findings", "checks"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "verdict": { "enum": ["pass", "fail", "needs_human_review"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "description", "file", "line", "recommendation"],
+        "properties": {
+          "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "file": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"], "minimum": 1 },
+          "recommendation": { "type": "string" }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "acceptance_criteria", "tests", "security", "data_integrity"],
+      "properties": {
+        "scope": { "$ref": "#/$defs/check" },
+        "acceptance_criteria": { "$ref": "#/$defs/check" },
+        "tests": { "$ref": "#/$defs/check" },
+        "security": { "$ref": "#/$defs/check" },
+        "data_integrity": { "$ref": "#/$defs/check" }
+      }
+    }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "notes"],
+      "properties": {
+        "status": { "enum": ["pass", "fail", "not_applicable", "unknown"] },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}
+
