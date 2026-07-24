@@ -61,8 +61,8 @@ jobs:
           mkdir -p ai-review
           git diff --no-ext-diff "$BASE_SHA...HEAD" > ai-review/diff.patch
           cp reviews/REVIEW_SCHEMA.json ai-review/review-schema.json
-          task_file=$(find tasks -maxdepth 1 -name '*.yaml' -print -quit)
-          if [[ -n "$task_file" ]]; then cp "$task_file" ai-review/task.yaml; fi
+          python scripts/collect_delivery_context.py --base "$BASE_SHA"
+          cp delivery-context/task.yaml ai-review/task.yaml
 
       - name: Request structured AI review
         id: review
@@ -126,4 +126,3 @@ jobs:
           name: ai-review-${{ github.run_id }}
           retention-days: 30
           path: ai-review/
-

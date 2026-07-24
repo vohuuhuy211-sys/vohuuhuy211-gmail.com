@@ -20,6 +20,45 @@ def git(root: Path, *args: str, check: bool = True) -> str:
     return result.stdout
 
 
+def select_task(root: Path, changed: str, requested_task: str | None) -> Path | None:
+    if requested_task:
+        task_path = Path(requested_task)
+        return task_path if task_path.is_absolute() else root / task_path
+
+    changed_tasks = []
+    for line in changed.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        candidate = Path(parts[-1])
+        if (
+            candidate.parent == Path("tasks")
+            and candidate.suffix in {".yaml", ".yml"}
+            and candidate.name != "TASK_TEMPLATE.yaml"
+        ):
+            changed_tasks.append(root / candidate)
+
+    changed_tasks = sorted(set(changed_tasks))
+    if len(changed_tasks) == 1:
+        return changed_tasks[0]
+    if len(changed_tasks) > 1:
+        names = ", ".join(str(path.relative_to(root)) for path in changed_tasks)
+        raise ValueError(f"multiple changed task files found; pass --task explicitly: {names}")
+
+    candidates = sorted(
+        path
+        for pattern in ("*.yaml", "*.yml")
+        for path in (root / "tasks").glob(pattern)
+        if path.name != "TASK_TEMPLATE.yaml"
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        names = ", ".join(str(path.relative_to(root)) for path in candidates)
+        raise ValueError(f"multiple task files found; pass --task explicitly: {names}")
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", help="Task YAML path; otherwise auto-detect changed tasks")
@@ -47,12 +86,7 @@ def main() -> int:
         git(root, "diff", "--binary", diff_range, check=False), encoding="utf-8"
     )
 
-    task_path = Path(args.task) if args.task else None
-    if task_path is None:
-        candidates = sorted((root / "tasks").glob("*.yaml"))
-        task_path = candidates[0] if candidates else None
-    elif not task_path.is_absolute():
-        task_path = root / task_path
+    task_path = select_task(root, changed, args.task)
     if task_path and task_path.is_file():
         shutil.copyfile(task_path, output / "task.yaml")
         task_source = str(task_path.relative_to(root))

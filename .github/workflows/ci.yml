@@ -46,6 +46,20 @@ jobs:
           elif [[ -f pyproject.toml ]]; then python -m pip install .
           fi
 
+      - name: Validate collaboration infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/python-cache"
+          python -m py_compile scripts/collect_delivery_context.py
+          python -m json.tool reviews/REVIEW_SCHEMA.json >/dev/null
+          ruby -e '
+            require "yaml"
+            files = Dir.glob("**/*.yml", File::FNM_DOTMATCH) +
+                    Dir.glob("**/*.yaml", File::FNM_DOTMATCH)
+            files.each { |file| YAML.parse_file(file) }
+          '
+
       - name: Run tests and preserve the real exit status
         id: tests
         shell: bash
@@ -100,4 +114,3 @@ jobs:
         run: |
           echo "Tests failed with exit code ${{ steps.tests.outputs.exit_code }}."
           exit 1
-
